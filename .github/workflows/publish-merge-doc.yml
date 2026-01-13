@@ -16,4 +16,5 @@ jobs:
       before: ${{ github.event.before || '0000000000000000000000000000000000000000' }}
       after: ${{ github.sha }}
       repository: ${{ github.repository }}
-    secrets: inherit
+    secrets:
+      DOC_MERGE_PAT: ${{ secrets.DOC_MERGE_PAT }}
