@@ -1,0 +1,73 @@
+name: Publish merge documentation
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  merge-doc:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Resolve before/after refs
+        id: refs
+        shell: bash
+        run: |
+          AFTER_SHA="${GITHUB_SHA}"
+          if [ -n "${{ github.event.before }}" ]; then
+            BEFORE_SHA="${{ github.event.before }}"
+          else
+            BEFORE_SHA="$(git rev-parse HEAD~1 2>/dev/null || echo 0000000000000000000000000000000000000000)"
+          fi
+          echo "before=${BEFORE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "after=${AFTER_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate merge doc markdown
+        uses: gabimarsola/agent-doc-merge/.github/actions/generate-merge-doc@main
+        with:
+          before: ${{ steps.refs.outputs.before }}
+          after: ${{ steps.refs.outputs.after }}
+          repository: ${{ github.repository }}
+          output_dir: ${{ runner.temp }}/merge-doc-out
+
+      - name: Checkout agent-doc-merge repository
+        uses: actions/checkout@v4
+        with:
+          repository: gabimarsola/agent-doc-merge
+          path: agent-doc-merge
+          token: ${{ secrets.AGENT_DOC_MERGE_PAT }}
+          fetch-depth: 0
+
+      - name: Copy generated docs into agent-doc-merge
+        shell: bash
+        run: |
+          mkdir -p agent-doc-merge/docs/merge-notes
+          cp -R "${{ runner.temp }}/merge-doc-out"/* agent-doc-merge/docs/merge-notes/
+
+      - name: Commit and push docs
+        shell: bash
+        run: |
+          cd agent-doc-merge
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/merge-notes
+          git commit -m "docs(merge): update merge notes for ${{ github.repository }}"
+          git push
